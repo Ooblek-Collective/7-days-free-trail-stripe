@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Access &middot; Sign in</title>
+    <style>
+      :root {
+        --bg: #14161b;
+        --panel: #1c1f26;
+        --panel-border: #2a2e38;
+        --text: #e7e9ee;
+        --text-dim: #8b909c;
+        --accent: #e0a527;
+        --accent-dim: #7a5f1c;
+        --danger: #d1584a;
+        --radius: 10px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg);
+        background-image:
+          radial-gradient(
+            circle at 15% 20%,
+            rgba(224, 165, 39, 0.07),
+            transparent 40%
+          ),
+          radial-gradient(
+            circle at 85% 80%,
+            rgba(224, 165, 39, 0.05),
+            transparent 45%
+          );
+        color: var(--text);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+        padding: 24px;
+      }
+      .wrap {
+        width: 100%;
+        max-width: 380px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 28px;
+      }
+      .brand-mark {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 14px;
+        color: #14161b;
+      }
+      .brand-name {
+        font-weight: 600;
+        letter-spacing: 0.2px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--panel-border);
+        border-radius: var(--radius);
+        padding: 28px;
+      }
+      .panel h1 {
+        font-size: 19px;
+        margin: 0 0 4px;
+      }
+      .panel .sub {
+        color: var(--text-dim);
+        font-size: 13.5px;
+        margin: 0 0 22px;
+      }
+
+      label {
+        display: block;
+        font-size: 12.5px;
+        color: var(--text-dim);
+        margin: 14px 0 6px;
+      }
+      input[type="text"],
+      input[type="password"] {
+        width: 100%;
+        padding: 10px 12px;
+        background: #101216;
+        border: 1px solid var(--panel-border);
+        border-radius: 7px;
+        color: var(--text);
+        font-size: 14px;
+        outline: none;
+        transition: border-color 0.15s;
+      }
+      input:focus {
+        border-color: var(--accent);
+      }
+
+      .row {
+        display: flex;
+        gap: 10px;
+      }
+      .row > * {
+        flex: 1;
+      }
+
+      button {
+        cursor: pointer;
+        border: none;
+        border-radius: 7px;
+        font-size: 14px;
+        font-weight: 600;
+        padding: 11px 14px;
+        transition:
+          opacity 0.15s,
+          transform 0.05s;
+      }
+      button:active {
+        transform: scale(0.98);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+
+      .btn-primary {
+        width: 100%;
+        margin-top: 18px;
+        background: var(--accent);
+        color: #14161b;
+      }
+      .btn-primary:hover:not(:disabled) {
+        opacity: 0.92;
+      }
+
+      .toggle {
+        margin-top: 18px;
+        text-align: center;
+        font-size: 13px;
+        color: var(--text-dim);
+      }
+      .toggle a {
+        color: var(--accent);
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .toggle a:hover {
+        text-decoration: underline;
+      }
+
+      .msg {
+        margin-top: 14px;
+        font-size: 13px;
+        padding: 9px 11px;
+        border-radius: 7px;
+        display: none;
+      }
+      .msg.error {
+        display: block;
+        background: rgba(209, 88, 74, 0.12);
+        color: var(--danger);
+        border: 1px solid rgba(209, 88, 74, 0.3);
+      }
+
+      .tiers {
+        margin-top: 20px;
+        display: flex;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--text-dim);
+      }
+      .tiers span {
+        flex: 1;
+        text-align: center;
+        padding: 5px 0;
+        border: 1px solid var(--panel-border);
+        border-radius: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="brand">
+        <div class="brand-mark">A</div>
+        <div class="brand-name">Access Demo</div>
+      </div>
+
+      <div class="panel">
+        <h1 id="formTitle">Sign in</h1>
+        <p class="sub" id="formSub">
+          Guests, free, trial and pro all land on the same dashboard - what they
+          see there depends on this login.
+        </p>
+
+        <form id="authForm">
+          <label for="username">Username</label>
+          <input type="text" id="username" autocomplete="username" required />
+
+          <label for="password">Password</label>
+          <input
+            type="password"
+            id="password"
+            autocomplete="current-password"
+            required
+          />
+
+          <button type="submit" class="btn-primary" id="submitBtn">
+            Sign in
+          </button>
+        </form>
+
+        <div class="msg error" id="msg"></div>
+
+        <div class="toggle">
+          <span id="toggleText">Don't have an account?</span>
+          <a id="toggleLink">Create one</a>
+        </div>
+
+        <div class="tiers">
+          <span>Free</span>
+          <span>Trial</span>
+          <span>Pro</span>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let mode = "login"; // or 'register'
+
+      const form = document.getElementById("authForm");
+      const msg = document.getElementById("msg");
+      const submitBtn = document.getElementById("submitBtn");
+      const formTitle = document.getElementById("formTitle");
+      const formSub = document.getElementById("formSub");
+      const toggleText = document.getElementById("toggleText");
+      const toggleLink = document.getElementById("toggleLink");
+
+      toggleLink.addEventListener("click", () => {
+        mode = mode === "login" ? "register" : "login";
+        if (mode === "register") {
+          formTitle.textContent = "Create your account";
+          formSub.textContent =
+            "Starts on the free tier. You can start a trial from the dashboard.";
+          submitBtn.textContent = "Create account";
+          toggleText.textContent = "Already have an account?";
+          toggleLink.textContent = "Sign in";
+        } else {
+          formTitle.textContent = "Sign in";
+          formSub.textContent =
+            "Guests, free, trial and pro all land on the same dashboard - what they see there depends on this login.";
+          submitBtn.textContent = "Sign in";
+          toggleText.textContent = "Don't have an account?";
+          toggleLink.textContent = "Create one";
+        }
+        msg.style.display = "none";
+      });
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        msg.style.display = "none";
+        submitBtn.disabled = true;
+
+        const username = document.getElementById("username").value.trim();
+        const password = document.getElementById("password").value;
+        const endpoint = mode === "login" ? "/login" : "/register";
+
+        try {
+          const res = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, password }),
+          });
+          const data = await res.json();
+
+          if (!res.ok) {
+            msg.textContent = data.error || "Something went wrong";
+            msg.style.display = "block";
+            submitBtn.disabled = false;
+            return;
+          }
+
+          window.location.href = "/dashboard.html";
+        } catch (err) {
+          msg.textContent = "Could not reach the server";
+          msg.style.display = "block";
+          submitBtn.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>
