@@ -230,6 +230,50 @@
         color: var(--text-dim);
         margin-top: 8px;
       }
+
+      .invoice-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .invoice-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 9px 0;
+        border-bottom: 1px solid var(--panel-border);
+        font-size: 13px;
+      }
+      .invoice-row:last-child {
+        border-bottom: none;
+      }
+      .invoice-main {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .invoice-amount {
+        font-variant-numeric: tabular-nums;
+      }
+      .invoice-status {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+        color: var(--text-dim);
+      }
+      .invoice-row a {
+        color: var(--accent);
+        font-size: 12.5px;
+        text-decoration: none;
+      }
+      .invoice-row a:hover {
+        text-decoration: underline;
+      }
+      .invoice-empty {
+        font-size: 13px;
+        color: var(--text-dim);
+      }
     </style>
   </head>
   <body>
@@ -290,10 +334,19 @@
         </div>
         <p>
           Full access. Unlocks automatically once the first 7 days pass without
-          a refund, and stays open through the rest of the ~30-day billing
-          period.
+          a refund, and continues through a full pro month. After that your
+          subscription renews automatically each month at $199 until you
+          cancel.
         </p>
         <div class="lock-note" id="proLockNote"></div>
+      </section>
+
+      <section class="perm" id="sectionInvoices">
+        <div class="perm-head">
+          <h2>Invoices</h2>
+          <span class="perm-tag">From Stripe</span>
+        </div>
+        <div id="invoiceList" class="invoice-list"></div>
       </section>
     </main>
 
@@ -310,6 +363,8 @@
       const sectionPro = document.getElementById("sectionPro");
       const trialLockNote = document.getElementById("trialLockNote");
       const proLockNote = document.getElementById("proLockNote");
+      const invoiceList = document.getElementById("invoiceList");
+      const sectionInvoices = document.getElementById("sectionInvoices");
 
       const tierLabels = {
         guest: "Guest",
@@ -407,6 +462,8 @@
         actions.innerHTML = "";
         note.textContent = "";
 
+        sectionInvoices.style.display = data.loggedIn ? "" : "none";
+
         if (!data.loggedIn) {
           note.textContent =
             "You are browsing as a guest - only the public section is visible.";
@@ -420,7 +477,7 @@
           btn.addEventListener("click", () => subscribe(btn));
           actions.appendChild(btn);
           note.textContent =
-            "This simulates charging $199 and starting the 7-day limited-access window.";
+            "You'll be redirected to Stripe to pay $199 and start your 7-day refund window.";
         } else if (data.tier === "trial") {
           const btn = document.createElement("button");
           btn.className = "action btn-refund";
@@ -428,30 +485,81 @@
           btn.addEventListener("click", () => refund(btn));
           actions.appendChild(btn);
           note.textContent =
-            "Refunding within the trial window reverts your account to Free immediately.";
+            "Refunding within the trial window reverts your account to Free immediately and cancels billing.";
         } else if (data.tier === "pro") {
           const btn = document.createElement("button");
           btn.className = "action btn-refund";
-          btn.textContent = "Cancel / refund";
+          btn.textContent = "Cancel subscription";
           btn.addEventListener("click", () => refund(btn));
           actions.appendChild(btn);
           note.textContent =
-            "You are past the 7-day window with full access through the rest of the ~30-day period.";
+            "You are past the 7-day window, so no refund - but you can cancel to stop future renewals. Access stays on through the period you already paid for.";
         }
+
+        loadInvoices();
       }
 
       async function subscribe(btn) {
         btn.disabled = true;
-        btn.textContent = "Processing payment\u2026";
-        await fetch("/subscribe", { method: "POST" });
-        await loadStatus();
+        btn.textContent = "Redirecting to Stripe\u2026";
+        try {
+          const res = await fetch("/subscribe", { method: "POST" });
+          const data = await res.json();
+          if (data.url) {
+            window.location.href = data.url;
+          } else {
+            btn.disabled = false;
+            btn.textContent = "Start 7-day trial - $199";
+          }
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = "Start 7-day trial - $199";
+        }
       }
 
       async function refund(btn) {
         btn.disabled = true;
-        btn.textContent = "Processing refund\u2026";
+        btn.textContent = "Processing\u2026";
         await fetch("/refund", { method: "POST" });
         await loadStatus();
+      }
+
+      async function loadInvoices() {
+        if (!currentData || !currentData.loggedIn) {
+          invoiceList.innerHTML = "";
+          return;
+        }
+        try {
+          const res = await fetch("/api/invoices");
+          const invoices = await res.json();
+          if (!invoices.length) {
+            invoiceList.innerHTML =
+              '<div class="invoice-empty">No invoices yet.</div>';
+            return;
+          }
+          invoiceList.innerHTML = invoices
+            .map((inv) => {
+              const amount = (inv.amountPaid / 100).toLocaleString(undefined, {
+                style: "currency",
+                currency: inv.currency.toUpperCase(),
+              });
+              const date = new Date(inv.created).toLocaleDateString();
+              const link = inv.hostedInvoiceUrl
+                ? `<a href="${inv.hostedInvoiceUrl}" target="_blank" rel="noopener">View</a>`
+                : "";
+              return `<div class="invoice-row">
+                <div class="invoice-main">
+                  <span class="invoice-amount">${amount} &middot; ${date}</span>
+                  <span class="invoice-status">${inv.status}</span>
+                </div>
+                ${link}
+              </div>`;
+            })
+            .join("");
+        } catch (err) {
+          invoiceList.innerHTML =
+            '<div class="invoice-empty">Could not load invoices.</div>';
+        }
       }
 
       loadStatus();
