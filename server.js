@@ -4,6 +4,14 @@ const express = require("express");
 const session = require("express-session");
 const path = require("path");
 const Stripe = require("stripe");
+const bcrypt = require("bcryptjs");
+const {
+  getUserByUsername,
+  getUserById,
+  findUserBySubscriptionId,
+  createUser,
+  updateUser,
+} = require("./db");
 
 if (!process.env.STRIPE_SECRET_KEY) {
   console.warn(
@@ -48,21 +56,48 @@ app.post(
           if (!user) break;
 
           const subscriptionId = session.subscription;
-          user.stripeCustomerId = session.customer;
-          user.stripeSubscriptionId = subscriptionId;
-          user.tier = "trial";
-          user.trialStart = Date.now();
+          updateUser(user.id, {
+            stripeCustomerId: session.customer,
+            stripeSubscriptionId: subscriptionId,
+            tier: "trial",
+            trialStart: Date.now(),
+          });
 
           // Push the next renewal out so cycle 1 covers the 7-day refund
           // window plus a full pro month, without charging again right now.
+          // current_period_start lives on the subscription item, not the
+          // subscription itself, as of API version 2026-07-29.dahlia, and
+          // existing subscriptions can no longer have billing_cycle_anchor
+          // set to an arbitrary date via a plain update (only 'now' or
+          // 'unchanged') - rescheduling requires a subscription schedule.
           const subscription =
             await stripe.subscriptions.retrieve(subscriptionId);
           const anchor =
-            subscription.current_period_start +
+            subscription.items.data[0].current_period_start +
             Math.round(FIRST_PERIOD_LENGTH_MS / 1000);
-          await stripe.subscriptions.update(subscriptionId, {
-            billing_cycle_anchor: anchor,
-            proration_behavior: "none",
+
+          const schedule = await stripe.subscriptionSchedules.create({
+            from_subscription: subscriptionId,
+          });
+          const items = schedule.phases[0].items.map((item) => ({
+            price: item.price,
+            quantity: item.quantity,
+          }));
+          await stripe.subscriptionSchedules.update(schedule.id, {
+            end_behavior: "release",
+            phases: [
+              {
+                items,
+                start_date: schedule.phases[0].start_date,
+                end_date: anchor,
+                proration_behavior: "none",
+              },
+              {
+                items,
+                start_date: anchor,
+                proration_behavior: "none",
+              },
+            ],
           });
           break;
         }
@@ -71,8 +106,11 @@ app.post(
           const subscription = event.data.object;
           const user = findUserBySubscriptionId(subscription.id);
           if (user) {
-            user.tier = "free";
-            user.trialStart = null;
+            updateUser(user.id, {
+              tier: "free",
+              trialStart: null,
+              proUnlockedEarly: false,
+            });
           }
           break;
         }
@@ -110,13 +148,6 @@ app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/", (req, res) => res.redirect("/index.html"));
 
-// ---------------------------------------------------------------------------
-// In-memory "database". Restarting the server wipes all users - that's fine
-// for this demo, but swap this out for a real store before shipping anything.
-// ---------------------------------------------------------------------------
-const users = {}; // keyed by username
-let nextId = 1;
-
 // Tier timing. Overridable via env vars so you can test the full flow
 // without waiting real days - e.g.
 //   TRIAL_LENGTH_MS=15000 FIRST_PERIOD_LENGTH_MS=30000 npm start
@@ -127,36 +158,15 @@ const TRIAL_LENGTH_MS =
 const FIRST_PERIOD_LENGTH_MS =
   Number(process.env.FIRST_PERIOD_LENGTH_MS) || 37 * 24 * 60 * 60 * 1000;
 
-function getUserByUsername(username) {
-  return users[username];
-}
-
-function getUserById(id) {
-  return Object.values(users).find((u) => u.id === id);
-}
-
-function findUserBySubscriptionId(subscriptionId) {
-  return Object.values(users).find(
-    (u) => u.stripeSubscriptionId === subscriptionId,
-  );
-}
-
-function randomLetters(count) {
-  const alphabet = "abcdefghijklmnopqrstuvwxyz";
-  let out = "";
-  for (let i = 0; i < count; i++) {
-    out += alphabet[Math.floor(Math.random() * alphabet.length)];
-  }
-  return out;
-}
-
 /**
  * Resolves what a user (or guest) currently has access to.
  * tier is DISPLAYED tier - 'trial' silently becomes 'pro' once 7 days pass,
- * purely by elapsed time, with no separate billing event. The only thing
- * that forces a user back to 'free' is the customer.subscription.deleted
- * webhook (immediate cancel after a refund, or the subscription actually
- * ending after cancel_at_period_end / failed-payment exhaustion).
+ * purely by elapsed time, with no separate billing event, or immediately if
+ * the user opted into an early upgrade (proUnlockedEarly). Either way the
+ * only thing that forces a user back to 'free' is the
+ * customer.subscription.deleted webhook (immediate cancel after a refund,
+ * or the subscription actually ending after cancel_at_period_end /
+ * failed-payment exhaustion).
  */
 function resolveAccess(user) {
   if (!user) {
@@ -170,7 +180,7 @@ function resolveAccess(user) {
   const now = Date.now();
   const trialEndsAt = user.trialStart + TRIAL_LENGTH_MS;
 
-  if (now < trialEndsAt) {
+  if (!user.proUnlockedEarly && now < trialEndsAt) {
     return {
       tier: "trial",
       sections: ["public", "trial"],
@@ -196,34 +206,27 @@ function requireAuth(req, res, next) {
 // Auth routes
 // ---------------------------------------------------------------------------
 
-app.post("/register", (req, res) => {
+app.post("/register", async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: "Username and password required" });
   }
-  if (users[username]) {
+  if (getUserByUsername(username)) {
     return res.status(409).json({ error: "That username is taken" });
   }
 
-  users[username] = {
-    id: nextId++,
-    username,
-    password, // plain text - demo only, never do this in a real app
-    tier: "free",
-    trialStart: null,
-    stripeCustomerId: null,
-    stripeSubscriptionId: null,
-  };
+  const passwordHash = await bcrypt.hash(password, 10);
+  const user = createUser(username, passwordHash);
 
-  req.session.userId = users[username].id;
+  req.session.userId = user.id;
   res.json({ ok: true });
 });
 
-app.post("/login", (req, res) => {
+app.post("/login", async (req, res) => {
   const { username, password } = req.body;
   const user = getUserByUsername(username);
 
-  if (!user || user.password !== password) {
+  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
     return res.status(401).json({ error: "Invalid username or password" });
   }
 
@@ -251,6 +254,7 @@ app.post("/subscribe", requireAuth, async (req, res) => {
         name: user.username,
         metadata: { appUserId: String(user.id) },
       });
+      updateUser(user.id, { stripeCustomerId: customer.id });
       user.stripeCustomerId = customer.id;
     }
 
@@ -264,7 +268,6 @@ app.post("/subscribe", requireAuth, async (req, res) => {
       },
       success_url: `${APP_URL}/dashboard.html?checkout=success`,
       cancel_url: `${APP_URL}/dashboard.html?checkout=cancelled`,
-      integration_identifier: `tier-app-${randomLetters(8)}`,
     });
 
     res.json({ url: checkoutSession.url });
@@ -274,9 +277,72 @@ app.post("/subscribe", requireAuth, async (req, res) => {
   }
 });
 
+// Lets a trial user skip ahead to Pro instead of waiting out the 7 days.
+// The unused trial days are forfeited - the subscription's billing schedule
+// is rewound so the current phase ends right now, and a fresh normal Pro
+// month starts counting immediately from this moment (so the next $199
+// charge lands 30 days from the upgrade, not 37 days from signup). No extra
+// charge happens for the transition itself (proration_behavior: "none").
+// This also forfeits refund eligibility, same as if the 7 days had actually
+// passed - see /refund below, which is keyed off the displayed tier.
+app.post("/upgrade", requireAuth, async (req, res) => {
+  const user = getUserById(req.session.userId);
+  const access = resolveAccess(user);
+
+  if (access.tier !== "trial") {
+    return res
+      .status(400)
+      .json({ error: "Early upgrade is only available during your trial" });
+  }
+
+  try {
+    const subscription = await stripe.subscriptions.retrieve(
+      user.stripeSubscriptionId,
+    );
+    if (!subscription.schedule) {
+      throw new Error(
+        `Subscription ${subscription.id} has no schedule to reschedule`,
+      );
+    }
+
+    const schedule = await stripe.subscriptionSchedules.retrieve(
+      subscription.schedule,
+    );
+    const items = schedule.phases[0].items.map((item) => ({
+      price: item.price,
+      quantity: item.quantity,
+    }));
+    const now = Math.floor(Date.now() / 1000);
+
+    await stripe.subscriptionSchedules.update(subscription.schedule, {
+      end_behavior: "release",
+      phases: [
+        {
+          items,
+          start_date: schedule.phases[0].start_date,
+          end_date: now,
+          proration_behavior: "none",
+        },
+        {
+          items,
+          start_date: now,
+          proration_behavior: "none",
+        },
+      ],
+    });
+
+    updateUser(user.id, { proUnlockedEarly: true });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Failed to upgrade early:", err);
+    res.status(500).json({ error: "Could not upgrade to Pro" });
+  }
+});
+
 // Within the 7-day trial: full refund + cancel immediately (no renewal).
-// After 7 days (pro): no refund, just cancel_at_period_end - access
-// continues through the already-paid period, then lapses on its own.
+// Once displaying as Pro - whether by the 7 days actually passing or by an
+// early upgrade - no refund, just cancel_at_period_end: access continues
+// through the already-paid period, then lapses on its own.
 app.post("/refund", requireAuth, async (req, res) => {
   const user = getUserById(req.session.userId);
 
@@ -290,16 +356,27 @@ app.post("/refund", requireAuth, async (req, res) => {
     if (access.tier === "trial") {
       const subscription = await stripe.subscriptions.retrieve(
         user.stripeSubscriptionId,
-        { expand: ["latest_invoice.payment_intent"] },
+      );
+      // invoice.payment_intent no longer exists as of API version
+      // 2026-07-29.dahlia - the payment now lives under payments.data[].
+      const invoice = await stripe.invoices.retrieve(
+        subscription.latest_invoice,
+        { expand: ["payments.data.payment.payment_intent"] },
       );
       const paymentIntentId =
-        subscription.latest_invoice?.payment_intent?.id;
-      if (paymentIntentId) {
-        await stripe.refunds.create({ payment_intent: paymentIntentId });
+        invoice.payments?.data?.[0]?.payment?.payment_intent?.id;
+      if (!paymentIntentId) {
+        throw new Error(
+          `No payment_intent found on invoice ${invoice.id} to refund`,
+        );
       }
+      await stripe.refunds.create({ payment_intent: paymentIntentId });
       await stripe.subscriptions.cancel(user.stripeSubscriptionId);
-      user.tier = "free";
-      user.trialStart = null;
+      updateUser(user.id, {
+        tier: "free",
+        trialStart: null,
+        proUnlockedEarly: false,
+      });
     } else {
       await stripe.subscriptions.update(user.stripeSubscriptionId, {
         cancel_at_period_end: true,

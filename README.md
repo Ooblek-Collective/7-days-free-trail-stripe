@@ -29,6 +29,10 @@ active tax registration.
 
 ## Run it
 
+The frontend (`client/`, React + TypeScript + Tailwind, built with Vite)
+compiles to static files in `public/`, which `server.js` serves as before.
+`npm start` builds it automatically via a `prestart` hook.
+
 ```
 npm install
 npm start
@@ -42,6 +46,16 @@ stripe listen --forward-to localhost:3000/webhook/stripe
 
 Open http://localhost:3000 — sign in as a guest (just browse `/dashboard.html`
 without logging in), or register an account.
+
+For frontend development with hot reload, run the backend and the Vite dev
+server in separate terminals:
+
+```
+npm start          # backend on :3000
+npm run dev         # Vite dev server on :5173, proxies API calls to :3000
+```
+
+Then work against http://localhost:5173.
 
 ## The tier logic (server.js)
 
@@ -81,11 +95,9 @@ a [Stripe test card](https://docs.stripe.com/testing) like
 
 ## Notes / things to swap out before this is real
 
-- Users are stored in memory (`server.js`, the `users` object) — restarting
-  the server wipes everyone. Swap in a real database (and persist
-  `stripeCustomerId` / `stripeSubscriptionId` there).
-- Passwords are stored in plain text for simplicity — never do this outside
-  a demo; use bcrypt or similar.
+- Users persist in a local SQLite file (`data.sqlite`, via `db.js`) with
+  bcrypt-hashed passwords. Fine for a single-instance deploy; swap in a
+  hosted database before running multiple server instances.
 - Session secret in `server.js` falls back to a placeholder — set
   `SESSION_SECRET` in `.env` to a long random string.
 - Store `STRIPE_SECRET_KEY` in a real secrets vault in production, not a
