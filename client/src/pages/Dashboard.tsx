@@ -26,6 +26,13 @@ function formatRemaining(ms: number): string {
   return `${minutes}m ${seconds}s remaining`;
 }
 
+function formatDate(ms: number): string {
+  const d = new Date(ms);
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  return `${day}/${month}/${d.getFullYear()}`;
+}
+
 export default function Dashboard() {
   const [data, setData] = useState<MeResponse | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
@@ -198,10 +205,14 @@ export default function Dashboard() {
             ) : (
               <button
                 onClick={handleRefund}
-                disabled={actionBusy}
+                disabled={actionBusy || data.cancelAt != null}
                 className="rounded-md text-[13.5px] font-semibold py-2.5 px-4 cursor-pointer bg-transparent border border-danger/40 text-danger disabled:opacity-50 disabled:cursor-default"
               >
-                {actionBusy ? "Processing…" : "Cancel subscription"}
+                {data.cancelAt != null
+                  ? "Cancellation scheduled"
+                  : actionBusy
+                    ? "Processing…"
+                    : "Cancel subscription"}
               </button>
             )}
           </div>
@@ -214,7 +225,9 @@ export default function Dashboard() {
                 : data.tier === "trial"
                   ? "Upgrading unlocks the Pro section right away and starts a fresh billing month from today, so your next charge moves up to 30 days from now instead of waiting out the trial - but it forfeits your refund. Refunding keeps that option by staying in the trial instead."
                   : data.tier === "pro"
-                    ? "You are on Pro, so no refund - but you can cancel to stop future renewals. Access stays on through the period you already paid for."
+                    ? data.cancelAt != null
+                      ? `Your subscription will be canceled on ${formatDate(data.cancelAt)}. You'll keep Pro access until then, and won't be charged again.`
+                      : "You are on Pro, so no refund - but you can cancel to stop future renewals. Access stays on through the period you already paid for."
                     : ""}
           </div>
         </div>

@@ -6,6 +6,7 @@ export interface MeResponse {
   tier: Tier;
   sections: string[];
   msRemaining: number | null;
+  cancelAt: number | null;
 }
 
 export interface Invoice {

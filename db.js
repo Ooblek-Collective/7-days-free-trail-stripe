@@ -13,7 +13,8 @@ db.exec(`
     trial_start INTEGER,
     stripe_customer_id TEXT,
     stripe_subscription_id TEXT,
-    pro_unlocked_early INTEGER NOT NULL DEFAULT 0
+    pro_unlocked_early INTEGER NOT NULL DEFAULT 0,
+    cancel_at INTEGER
   )
 `);
 
@@ -21,10 +22,14 @@ db.exec(`
 const existingColumns = new Set(
   db.prepare(`PRAGMA table_info(users)`).all().map((col) => col.name),
 );
-if (!existingColumns.has("pro_unlocked_early")) {
-  db.exec(
-    `ALTER TABLE users ADD COLUMN pro_unlocked_early INTEGER NOT NULL DEFAULT 0`,
-  );
+const columnsToAdd = {
+  pro_unlocked_early: "INTEGER NOT NULL DEFAULT 0",
+  cancel_at: "INTEGER",
+};
+for (const [column, definition] of Object.entries(columnsToAdd)) {
+  if (!existingColumns.has(column)) {
+    db.exec(`ALTER TABLE users ADD COLUMN ${column} ${definition}`);
+  }
 }
 
 const SELECT_USER = `
@@ -36,7 +41,8 @@ const SELECT_USER = `
     trial_start AS trialStart,
     stripe_customer_id AS stripeCustomerId,
     stripe_subscription_id AS stripeSubscriptionId,
-    pro_unlocked_early AS proUnlockedEarly
+    pro_unlocked_early AS proUnlockedEarly,
+    cancel_at AS cancelAt
   FROM users
 `;
 
@@ -80,6 +86,7 @@ const UPDATABLE_COLUMNS = {
   stripeCustomerId: "stripe_customer_id",
   stripeSubscriptionId: "stripe_subscription_id",
   proUnlockedEarly: "pro_unlocked_early",
+  cancelAt: "cancel_at",
 };
 
 function updateUser(id, patch) {

@@ -57,7 +57,14 @@ npm run dev         # Vite dev server on :5173, proxies API calls to :3000
 
 Then work against http://localhost:5173.
 
-## The tier logic (server.js)
+## The tier logic
+
+The backend is split into `app.js` (Express wiring), `config.js` (env/const
+config), `lib/stripeClient.js` (Stripe SDK singleton), `middleware/`
+(session auth), `services/access.js` (tier computation), `services/billing.js`
+(Subscription Schedule logic), `routes/` (auth, billing, status endpoints),
+and `webhooks/stripeWebhook.js` (the Stripe webhook handler). `server.js` is
+just the entry point that starts listening.
 
 - **Register** → account starts as `free` (public section only).
 - **"Start 7-day trial – $199"** → creates a Stripe Checkout Session
